@@ -22,11 +22,11 @@ You will be programming and testing your code on an AWS VM featuring Trainium ac
 
 Once you have logged in to your AWS machine, you should download the assignment starter code from the course Github using:
 
-`git clone https://github.com/stanford-cs149/asst4-trainium`
+`git clone https://github.com/stanford-cs149/asst4-trainium2`
 
-After downloading the Assignment 4 repository, move to the `asst4-trainium` directory and **run the install script we have provided**:
+After downloading the Assignment 4 repository, move to the `asst4-trainium2` directory and **run the install script we have provided**:
 ```
-cd asst4-trainium
+cd asst4-trainium2
 source install.sh
 ```
 The install script will activate a Python [virtual environment](https://builtin.com/data-science/python-virtual-environment) with all the needed assignment dependencies. It will also modify your `~/.bashrc` file so the virtual environment is activated upon future logins to your machine. Finally, the script sets up your InfluxDB credentials so that you may use `neuron-profile`.
@@ -270,7 +270,7 @@ There is a trade-off in choosing a tile's free dimension size:
 
 Currently, we have explored the benefits of increasing tile sizes to their maximum amount in order for us to amortize instruction overhead and DMA transfer setup / teardown. Now, we will explore why making the free dimension as large as possible is not always the best solution.
 
-For this task, you will need to use the profiling tool for NeuronDevices: `neuron-profile`, which can provide detailed analysis of the performance of an application running on a NeuronCore. In order to run the profiling tool, you must make sure that you ran the install script as detailed in [Environment Setup](https://github.com/stanford-cs149/asst4-trainium/tree/main?tab=readme-ov-file#environment-setup) and that you forwarded ports 3001 and 8086 when you ssh'd into your machine. To reiterate on the latter, the command you should have ran is:
+For this task, you will need to use the profiling tool for NeuronDevices: `neuron-profile`, which can provide detailed analysis of the performance of an application running on a NeuronCore. In order to run the profiling tool, you must make sure that you ran the install script as detailed in [Environment Setup](#environment-setup) and that you forwarded ports 3001 and 8086 when you ssh'd into your machine. To reiterate on the latter, the command you should have ran is:
 
  `ssh -i path/to/key_name.pem ubuntu@<public_dns_name> -L 3001:localhost:3001 -L 8086:localhost:8086`
  
