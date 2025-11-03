@@ -40,7 +40,7 @@ First, let's get you acquainted with Trainium.
 The `Trn2.3xlarge` instance used in this assignment features a single Trainium device, which comprises eight NeuronCores. Each core is equipped with its own dedicated HBM (high-bandwidth memory), as seen in the images below. Each NeuronCore can be considered a standalone processing unit, which contains its own on-chip storage as well as a collection of specialized compute engines for performing 128x128 matrix operations (Tensor Engine), 128-wide vector operations (Vector Engine), etc. While each Trainium device has eight NeuronCores, in this assignment we will be writing kernels that execute on a single NeuronCore.
 
 <p align="center">
-  <img src="handout/trainium_chip.png" width=60% height=60%>
+  <img src="handout/trainium_chip.png" width=45% height=45%>
   <img src="handout/neuroncore_v3.png" width=30% height=30%>
 </p>
 
@@ -125,7 +125,7 @@ In the code above...
 - `a_vec` and `b_vec` are NumPy arrays created outside the kernel residing in HBM.
 - `a_sbuf` and `b_sbuf` are arrays explicitly allocated in SBUF with the same shape and dtype as `a_vec` and `b_vec`.
 - `nisa.tensor_scalar(..., nl.add, ...)` performs vector addition using the vector engine. The signature `tensor_scalar` means that the second operand is expected to be a vector, i.e. of shape (N, 1), or a constant scalar, which makes it a bit faster than a general `tensor_tensor` operation.
-- `nisa.dma_copy` moves the relevant data between HBM and SBUF.
+- `nisa.dma_copy` moves the relevant data between HBM and SBUF (conceptually similar to `cudaMemcpyAsync` on NVIDIA GPUs).
 
 <p align="center">
   <img src="/handout/sbuf_layout.png" width=60% height=60%>
@@ -585,12 +585,16 @@ Your fused kernel takes in the following parameters:
   - `bias` - The convolution filter biases. `bias` has shape `(Output Channels)`
   - `pool_size` - The size of the max pooling filter and pooling stride. You are guaranteed that the size of the input, the size of the filter, and the `pool_size` would be such that everything is nicely divisible. More concretely, `(Input Height - Filter Height + 1) % Pool Size == 0`.  Notice that if the value of `pool_size` is `1`, then the fused kernel operates as a normal convolution kernel. This gives us the flexibility to choose whether we want max pooling or not.
 
-Feel free to use the [course slides](https://gfxcourses.stanford.edu/cs149/fall25/lecture/dnninference/slide_57) on a convolution layer implementation as a starting point. If you are referencing the course slides, `INPUT_DEPTH` is synonymous with `Input Channels` and `LAYER_NUM_FILTERS` is synonymous with `Output Channels` in our naming scheme. Note that the input parameters to your fused kernel have different shapes than depicted in the convolution course slides. You are free to reshape the inputs into whatever shapes you desire by using the [NumPy reshape method](https://numpy.org/doc/stable/reference/generated/numpy.reshape.html) just as was done in `vector_add_stream kernel` from Part 1. We have also given you the NumPy implementations of a convolution layer and a maxpool layer in `part2/conv2d_numpy.py`. The NumPy implementations should give you a general outline of the programming logic for each layer. It might be a good exercise to think about how you would be able to fuse the NumPy implementations into a single layer, which is what you will do in your kernel. Feel free to look over the [NKI tutorials](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/general/nki/tutorials.html) to learn more about additional optimizations or other API functions. You can also view the [API Reference Manual](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/general/nki/api/index.html) to see all of the API functions that are available and their usage. You may find some of them useful. *Hint:* [nisa.tensor_reduce(nl.max, ...)](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.isa.tensor_reduce.html) should be helpful for max pooling. [nisa.tensor_tensor](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.isa.tensor_tensor.html) should be helpful for adding bias.
+Feel free to use the [course slides](https://gfxcourses.stanford.edu/cs149/fall25/lecture/dnninference/slide_57) on a convolution layer implementation as a starting point. If you are referencing the course slides, `INPUT_DEPTH` is synonymous with `Input Channels` and `LAYER_NUM_FILTERS` is synonymous with `Output Channels` in our naming scheme. Note that the input parameters to your fused kernel have different shapes than depicted in the convolution course slides. You are free to reshape the inputs into whatever shapes you desire by using the [NumPy reshape method](https://numpy.org/doc/stable/reference/generated/numpy.reshape.html) just as was done in `vector_add_stream kernel` from Part 1. We have also given you the NumPy implementations of a convolution layer and a maxpool layer in `part2/conv2d_numpy.py`. The NumPy implementations should give you a general outline of the programming logic for each layer. It might be a good exercise to think about how you would be able to fuse the NumPy implementations into a single layer, which is what you will do in your kernel. Feel free to look over the [NKI tutorials](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/general/nki/tutorials.html) to learn more about additional optimizations or other API functions. You can also view the [NKI API Reference Manual](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/general/nki/api/index.html) to see all of the API functions that are available and their usage. You may find some of them useful. *Hint:* [nisa.tensor_reduce(nl.max, ...)](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.isa.tensor_reduce.html) should be helpful for max pooling. [nisa.tensor_tensor](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.isa.tensor_tensor.html) should be helpful for adding bias.
 
 ### What You Need To Do
 For this part of the assignment, focus exclusively on the file `part2/conv2d.py`. We've provided basic starter code; your task is to complete the implementation of the (fused) Conv2D kernel within the function `fused_conv2d_maxpool`.
 #### General Tips
-Prioritize Correctness First. Before optimizing for performance, ensure your implementation is correct. While you may choose to implement things differently, we recommend starting by creating a kernel that works for small image sizes. Then, once your kernel works for small images, extend its functionality to handle images that are too large to fit entirely in the SBUF buffer. Following that, incorporate bias addition. Proceed to optimize performance once you achieve correctness. The test harness is written such that you can optimize your conv2D implementation without having to fuse a maxpool operation with it. Thus, you may choose to fuse a max pool operation with the conv2d kernel after you have an implementation which is correct and meets the performance requirements.
+* **Prioritize correctness.** We recommend starting with the simplest case: small image, no bias, no maxpool. Once your kernel works for small images, extend its functionality to handle images that are too large to fit entirely in the SBUF buffer. Following that, incorporate bias addition, and then fuse the max pool operation into your kernel. Once you have a fully correct solution, start optimizing for performance/EC.
+  * The test harness will run your kernel on test cases ordered from easy to hard. Furthermore, you can optionally run the test harness with the maxpool test cases omitted, should you choose to work on the fused max pool with the conv2d kernel after you have a performant implementation.
+* **Keep track of tile dimensions.** Since you won't be able to compute the entire output at once, you'll have to think about which output dimension to break into tiles. Recall the constraints on SBUF tiles -- the partition dimension must be at most 128, and must be the first dimension of the tensor. Once you've decided on your output shape, what shape does that imply for your inputs? In other words, what subset of X and W do you need to compute a single output tile?
+* **Use the profiler to guide performance tuning.** Once you have a working kernel, you'll most likely need to further tune the performance to get full/extra credit. The profiler is your friend here: look for large gaps/phases where the Tensor Engine is idle and utilization is low, and try to restructure your code to minimize time spent in these sections.
+  * It might also be helpful to think back to Part 1, where we optimized a simple vector addition kernel (and a transpose kernel, if you attempted the extra credit).
 
 #### Testing
 Use the test harness script provided to validate your implementation. To run the tests, navigate to the `part2/` directory and execute:
@@ -600,49 +604,49 @@ python3 test_harness.py
 
 To check the correctness and performance of your implementation of Conv2D kernel with a fused maxpool, invoke the test harness with the `--test_maxpool` flag. 
 
-The test harness will run correctness tests first, and run performance checks next. A full-credit solution must achieve performance within 150% of the reference kernel while maintaining correctness. It will invoke your kernel with input tensors having data types float32 and float16: with the performance requirements for float16 being more strict. Make sure you write your kernels keeping this in mind!
+The test harness will run correctness tests first, and run performance checks next. A full-credit solution must achieve performance within 120% of the reference kernel while maintaining correctness. It will invoke your kernel with input tensors having data types float32 and float16, with the performance requirements for float16 being more strict. Make sure you write your kernels keeping this in mind!
 
 #### Writeup and Profiling
 Students are required to submit a write up briefly describing their implementations. Also describe how you went about optimizing your implementation. Make sure to profile your implementation, and report the achieved MFU (Model FLOPs Utilization), with both `float16` and `float32` data types. You can so by running `neuron-profile view -n [your_profile_name].neff -s [your_profile_name].ntff`. Run the test harness with the `--profile <profile_name>` flag to capture a trace.
 
 > [!TIP]
-> It’s expected that you will see the warnings below when using the profiler, which is a known issue due to changes in the NKI compiler stack. Some benchmarking parameters will be missing, but the MFU value is still available by mousing over the "Cumulative Utilization" line in the Estimated MFU section of the GUI.
+> When you open the profiler, you might see some warnings about missing benchmarking parameters. The only parameter you need to submit here is the MFU value, which is still available by mousing over the "Cumulative Utilization" line in the Estimated MFU section of the GUI, as seen below. (Make sure to take the MFU at the very end.)
 
 <p align="center">
-  <img src="handout/profiler-warning.png" alt="Profiler warning" width="90%">
+  <img src="handout/mfu.png" alt="Profiler warning" width="90%">
 </p>
 
 ### Tips on Using NKI
 * Prefer to use nki.isa APIs in the following scenarios:
     * For all compute operations
       * nisa.nc_matmul instead of nl.matmul
-      * nisa.tensor_scalar(op = nl.add, <>) instead of nl.add
+      * nisa.tensor_scalar(op=nl.add, <>) instead of nl.add
     * Prefer to use nisa.dma_copy() instead of nl.load()/nl.store().
     * When invoking nisa compute operations, make sure to only pass op=nl.* codes as the arguments to these. For example, don’t pass op=math.sin.
 * Avoid using nested functions. Define all functions at module level. 
-* To debug your implementations, you could run the test harness with the `--simulate` flag. This wraps your implementation with a call to `nki.simulate_kernel()`: you can read more about it [here](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.simulate_kernel.html#nki.simulate_kernel). When running in simulation mode, you can insert calls to `nl.device_print()` to print intermediate values of the device tensors. However, there __could be__ some divergence between CPU simulate and on-device execution. If you are unsure about the result, it's recommended to debug by returning intermediate tensors.
+* To debug your implementations, you can run the test harness with the `--simulate` flag. This wraps your implementation with a call to `nki.simulate_kernel()`: you can read more about it [here](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.simulate_kernel.html#nki.simulate_kernel). When running in simulation mode, you can insert `nl.device_print(str, tensor)` in your kernel to print intermediate values of the device tensors. However, there __could be__ some divergence between CPU simulate and on-device execution. If you are unsure about the result, it's recommended to debug by returning intermediate tensors.
 * Be careful when mutating tensor assignments. Some nisa APIs take the dst tensor as arguments, such as nisa.dma_copy(src=<>, dst=<>). Other APIs produce dst tensor through the function itself, and likely need to be used to modify an existing tensor. In future NKI releases all ISA APIs will take dst as an argument. For example:
-  * x_sbuf = nl.zeros(shape=hbm_tensor.shape, buffer = nl.sbuf)  (create the array)
-  * nisa.dma_copy(src = hbm_tensor, dst = x_sbuf) (copy into the array)
+  * x_sbuf = nl.zeros(shape=hbm_tensor.shape, buffer=nl.sbuf)  (create the array)
+  * nisa.dma_copy(src=hbm_tensor, dst=x_sbuf) (copy into the array)
   * Specifically, if you choose to use `nl.load(...)`, `x = nl.load(...)` (which creates a new array) is different from `x[...] = nl.load(...)` (which modifieds an existing array).
 * Avoid using block dimension, it's a pure software construct and does not impact hardware. (Don't worry about it if you don't know what it is.) Either put it in free dimensions or use lists of tensors. See public [documentation](https://awsdocs-neuron.readthedocs-hosted.com/en/v2.26.0/general/nki/nki_block_dimension_migration_guide.html#nki-block-dimension-migration-guide).
 * For tensor indexing, prefer to do it with integer slicing. When more advanced indexing is required, use [`nl.mgrid`](https://awsdocs-neuron.readthedocs-hosted.com/en/latest/nki/api/generated/nki.language.mgrid.html). Do not use nested slicing/mgrid. (e.g. t[0:128, 128:256][0:64, 0:64]). Do not use nl.arrange().
 
 
 ## Extra Credit
-Run neuron-profile again on smaller images. Is there a difference in MFU between smaller and larger images? If so, how would you optimize your fused convolution layer for smaller images? Consider how the dimensions of each tile are mapped onto the chip.
+Run neuron-profile again on smaller images. Is there a difference in MFU between smaller and larger images? If so, how would you optimize your fused convolution layer for smaller images? Consider the maximum dimensions of PSUM/matmuls and how the dimensions of each tile are mapped onto the chip.
 
 Up to five points of extra credit will be awarded for solutions that meet the performance goal for smaller images (a stricter target). Your write-up must clearly explain your approach and the steps you took to optimize your solution.
 
-It’s possible that your current solution already meets this requirement without the hint—great job if that’s the case! Please still make sure to thoroughly discuss your approach.
+It’s possible that your current solution already meets this requirement without the hint -- if that's the case, great job! Please still make sure to thoroughly discuss your approach.
 
 ## Grading Guidelines
 
-For the correctness test, we use two types of images. The first type is a small image with dimensions of 32×16. The second type is a large image with dimensions of 224×224, which exceeds the capacity of the SBUF and cannot fit within it.
+For the correctness test, we use two types of images. The first type is a small image with dimensions of 32×16. The second type is a large image with dimensions of 224×224, which exceeds the capacity of the SBUF and cannot fit within it all at once.
 
 For the performance test, we evaluate the performance under different configurations: with and without maxpool, and using float16 versus float32 precision. We will compare the performance of your program with the reference solution.
 
-We have two versions of reference solutions, main and optimized. You will be granted 95% of the performance points if your p99 latency is within 120% of the main reference latency. You will be granted all of the performance points if it is within 120% of our optimized reference latency.
+As an intermediate goal, we include latencies for an unoptimized version of the reference kernel. You will be granted 90% of the performance points if your p99 latency is within 120% of the unoptimized reference latency. You will be granted full performance points if it is within 120% of the optimized reference latency.
 
 There is only one performance threshold set for the EC part, which is 120% of the reference latency.
 
@@ -657,18 +661,18 @@ There is only one performance threshold set for the EC part, which is 120% of th
   - With Max Pool: 2.5 points
 
 **Performance of Fused Convolution - MaxPool Kernel: 50 Points + 5 Points EC**
-  - Without Max Pool (Float 16): 17.5 points
-  - Without Max Pool (Float 32): 17.5 points
-  - With Max Pool (Float 16): 7.5 points
-  - With Max Pool (Float 32): 7.5 points
-  - Without Max Pool on Smaller Images (Float 16): 1.25 points EC
-  - Without Max Pool on Smaller Images (Float 32): 1.25 points EC
-  - With Max Pool on Smaller Images (Float 16): 1.25 points EC
-  - With Max Pool on Smaller Images (Float 32): 1.25 points EC
+  - Without Max Pool (float16): 17.5 points
+  - Without Max Pool (float32): 17.5 points
+  - With Max Pool (float16): 7.5 points
+  - With Max Pool (float32): 7.5 points
+  - Without Max Pool on Smaller Images (float16): 1.25 points EC
+  - Without Max Pool on Smaller Images (float32): 1.25 points EC
+  - With Max Pool on Smaller Images (float16): 1.25 points EC
+  - With Max Pool on Smaller Images (float32): 1.25 points EC
 
 ## Hand-in Instructions
 
-Please submit your work using Gradescope. If you are working with a partner please remember to tag your partner on gradescope.
+Please submit your work using Gradescope. If you are working with a partner please remember to tag your partner on Gradescope.
 
 1. **Please submit your writeup as the file `writeup.pdf`.**
 2. **Please submit `conv2d.py` from part 2.**
