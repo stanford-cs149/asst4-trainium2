@@ -10,13 +10,9 @@ from neuronxcc.nki import benchmark
 from conv2d import fused_conv2d_maxpool as conv2d
 
 from conv2d_numpy import conv2d_cpu_torch
-import logging
 import argparse
 
 import subprocess
-
-logging.disable(logging.OFF)
-
 
 def save_trace(profile_name):
     """Run the profiler and save the NEFF and NTFF files with the specified name."""
